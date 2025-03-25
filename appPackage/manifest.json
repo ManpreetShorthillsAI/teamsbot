@@ -1,0 +1,58 @@
+{
+	"$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.20/MicrosoftTeams.schema.json",
+	"version": "1.0.0",
+	"manifestVersion": "1.20",
+	"id": "e0ecd7cf-ddb2-496d-88f2-011dab22d88a",
+	"name": {
+		"short": "summary_generator",
+		"full": ""
+	},
+	"developer": {
+		"name": "shorthillsAI",
+		"mpnId": "",
+		"websiteUrl": "https://www.shorthills.ai/",
+		"privacyUrl": "https://www.shorthills.ai/privacy",
+		"termsOfUseUrl": "https://www.shorthills.ai/termsofuse"
+	},
+	"description": {
+		"short": "Creates chat summary",
+		"full": "Creates chat summary"
+	},
+	"icons": {
+		"outline": "outline.png",
+		"color": "color.png"
+	},
+	"accentColor": "#FFFFFF",
+	"bots": [
+		{
+			"botId": "6b3f5d05-db02-4cc7-811f-d8a2281badf0",
+			"scopes": [
+				"personal",
+				"team",
+				"groupChat"
+			],
+			"supportsFiles": false,
+			"isNotificationOnly": false,
+			"commandLists": [
+				{
+					"scopes": [
+						"personal",
+						"team",
+						"groupChat"
+					],
+					"commands": [
+						{
+							"title": "Hi",
+							"description": "Say hi to the bot."
+						}
+					]
+				}
+			]
+		}
+	],
+	"validDomains": [],
+	"webApplicationInfo": {
+		"id": "d81c2724-8dfc-44a5-9278-51bf5536ebfb",
+		"resource": ""
+	}
+}
