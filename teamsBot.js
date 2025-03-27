@@ -36,7 +36,8 @@ class TeamsBot extends TeamsActivityHandler {
         await context.sendActivity(summary);
       } else {
         const responses = {
-          "hello": "Hello! How can I assist you today?",
+          "Hi": "Hi! How can I assist you today?",
+          "Hello": "Hello! How can I assist you today?",
           "help": "I can answer your questions! Try asking 'What can you do?'.",
           "what can you do?": "I can provide information and assist with common queries. Just ask!"
         };
