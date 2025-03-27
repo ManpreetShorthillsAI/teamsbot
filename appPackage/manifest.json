@@ -42,7 +42,7 @@
 					],
 					"commands": [
 						{
-							"title": "Hi",
+							"title": "Hello",
 							"description": "Say hi to the bot."
 						}
 					]
