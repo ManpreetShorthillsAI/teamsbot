@@ -140,8 +140,8 @@ class TeamsBot extends TeamsActivityHandler {
       
       console.log(`Response status: ${response.status}`);
       
-      // If we get here, we successfully retrieved the work item
-      return this.formatWorkItem(response.data);
+    const history = await this.getWorkItemHistory(workItemId);
+    return this.formatWorkItem(response.data, history);
     } catch (error) {
       console.error("Error fetching work item:", error);
       
@@ -156,7 +156,33 @@ class TeamsBot extends TeamsActivityHandler {
     }
   }
 
-  formatWorkItem(workItem) {
+  async getWorkItemHistory(workItemId) {
+    try {
+      const baseUrl = "https://dev.azure.com/ShorthillsPM";
+      const apiUrl = `${baseUrl}/_apis/wit/workitems/${workItemId}/updates?api-version=6.0`;
+      
+      console.log(`Fetching history for work item #${workItemId}`);
+      
+      const authToken = Buffer.from(`:${this.personalAccessToken}`).toString('base64');
+      const authHeader = {
+        'Authorization': `Basic ${authToken}`,
+        'Accept': 'application/json'
+      };
+      
+      const response = await axios.get(apiUrl, { 
+        headers: authHeader
+      });
+      
+      console.log(`History response status: ${response.status}`);
+      
+      return response.data.value || [];
+    } catch (error) {
+      console.error("Error fetching work item history:", error);
+      return [];
+    }
+  }
+
+  formatWorkItem(workItem, history = []) {
     const fields = workItem.fields || {};
     
     let formattedInfo = '📄 **WORK ITEM DETAILS**\n\n';
@@ -226,6 +252,46 @@ class TeamsBot extends TeamsActivityHandler {
           formattedInfo += `- ${relationType}: #${itemId}\n`;
         });
       }
+    }
+
+    let hasDiscussion = false;
+    formattedInfo += '\n\n**Discussion**:\n';
+    
+    if (history && history.length > 0) {
+      const discussionEntries = history.filter(update => 
+        update.fields && 
+        (update.fields['System.History'] || 
+         update.fields['System.CommentCount'])
+      );
+      
+      if (discussionEntries.length > 0) {
+        hasDiscussion = true;
+        discussionEntries.forEach(entry => {
+          if (entry.fields['System.History']) {
+            const commentDate = new Date(entry.revisedDate).toLocaleString();
+            formattedInfo += `\n📝 **${entry.revisedBy?.displayName || 'Unknown'}** (${commentDate}):\n`;
+            formattedInfo += `${this.stripHtml(entry.fields['System.History'].newValue)}\n`;
+          }
+        });
+      }
+    }
+    
+    if (!hasDiscussion && fields['System.Description']) {
+      const description = fields['System.Description'];
+      
+      if (description.includes('<div class="comment">') || 
+          description.includes('<div class="discussion">') ||
+          description.includes('Posted by:') ||
+          description.match(/On \d{1,2}\/\d{1,2}\/\d{2,4}.*wrote:/i)) {
+        
+        formattedInfo += `\nThe discussion appears to be embedded in the work item description. Here's the full description text:\n\n`;
+        formattedInfo += this.stripHtml(description);
+        hasDiscussion = true;
+      }
+    }
+    
+    if (!hasDiscussion) {
+      formattedInfo += 'No comments or discussion found for this work item.';
     }
     
     return formattedInfo;
