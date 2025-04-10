@@ -6,6 +6,7 @@ class TeamsBot extends TeamsActivityHandler {
   constructor(azureDevOpsOrgUrl, personalAccessToken) {
     super();
     this.chatHistories = {};
+    this.ticketContext = {};
     
     this.azureDevOpsOrgUrl = process.env.AZURE_ORG_URL;
     this.personalAccessToken = process.env.AZURE_PAT;
@@ -43,6 +44,7 @@ class TeamsBot extends TeamsActivityHandler {
       if (workItemId) {
         try {
           const workItemDetails = await this.getWorkItemDetails(workItemId);
+          this.ticketContext[conversationId] = workItemDetails;
           await context.sendActivity(MessageFactory.text(workItemDetails));
         } catch (error) {
           await context.sendActivity(MessageFactory.text(
@@ -55,6 +57,11 @@ class TeamsBot extends TeamsActivityHandler {
         const summary = await this.generateSummary(this.chatHistories[conversationId]);
         await context.sendActivity(summary);
       } 
+      else if (txt.endsWith("?") && this.ticketContext[conversationId]) {
+        const answer = await this.answerQuestionAboutTicket(originalText, this.ticketContext[conversationId]);
+        await context.sendActivity(answer);
+      }
+      
       // Regular bot responses
       else {
         const responses = {
@@ -358,6 +365,41 @@ class TeamsBot extends TeamsActivityHandler {
       return "Error generating summary.";
     }
   }
+  async answerQuestionAboutTicket(question, ticketContent) {
+    const prompt = `
+  You are an assistant helping users understand Azure DevOps tickets. Based on the following work item data:
+  
+  """ 
+  ${ticketContent}
+  """
+  
+  Answer the following question clearly and accurately:
+  
+  Q: ${question}
+  A: `;
+  
+    const apiKey = process.env.GEMINI_API_KEY;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    
+    const requestBody = {
+      contents: [{ parts: [{ text: prompt }] }]
+    };
+  
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody)
+      });
+  
+      const data = await response.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "Sorry, I couldn't find an answer.";
+    } catch (error) {
+      console.error("QnA Error:", error);
+      return "Error answering the question.";
+    }
+  }
+  
 }
 
 module.exports.TeamsBot = TeamsBot;
