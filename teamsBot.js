@@ -57,6 +57,66 @@ class TeamsBot extends TeamsActivityHandler {
           await context.sendActivity(MessageFactory.text(errorMessage));
         }
       }
+      else if (originalText.startsWith("@comment")) {
+        const commentText = originalText.substring("@comment".length).trim();
+        
+        if (!this.ticketContext[conversationId]) {
+          await context.sendActivity(MessageFactory.text(
+            "Please share a ticket first before adding a comment."
+          ));
+        } else {
+          try {
+            const workItemId = this.extractWorkItemIdFromContext(this.ticketContext[conversationId]);
+            console.log("Extracted work item ID from context:", workItemId);
+            
+            
+            if (workItemId) {
+              await this.addCommentToWorkItem(workItemId, commentText);
+              console.log("Comment added successfully to work item:", workItemId);
+              
+              await context.sendActivity(MessageFactory.text(
+                `✅ Comment added to work item #${workItemId} successfully!`
+              ));
+            } else {
+              await context.sendActivity(MessageFactory.text(
+                "Could not determine which ticket to comment on. Please share the ticket again."
+              ));
+            }
+          } catch (error) {
+            await context.sendActivity(MessageFactory.text(
+              `Error adding comment: ${error.message}`
+            ));
+          }
+        }
+      }
+      else if (originalText.startsWith("@comment")) {
+        const commentText = originalText.substring("@comment".length).trim();
+        
+        if (!this.ticketContext[conversationId]) {
+          await context.sendActivity(MessageFactory.text(
+            "Please share a ticket first before adding a comment."
+          ));
+        } else {
+          try {
+            const workItemId = this.extractWorkItemIdFromContext(this.ticketContext[conversationId]);
+            
+            if (workItemId) {
+              await this.addCommentToWorkItem(workItemId, commentText);
+              await context.sendActivity(MessageFactory.text(
+                `✅ Comment added to work item #${workItemId} successfully!`
+              ));
+            } else {
+              await context.sendActivity(MessageFactory.text(
+                "Could not determine which ticket to comment on. Please share the ticket again."
+              ));
+            }
+          } catch (error) {
+            await context.sendActivity(MessageFactory.text(
+              `Error adding comment: ${error.message}`
+            ));
+          }
+        }
+      }      
       // Check if user requests summary
       else if (txt.includes("@summary")) {
         const summary = await this.generateSummary(this.chatHistories[conversationId]);
@@ -73,7 +133,7 @@ class TeamsBot extends TeamsActivityHandler {
       else {
         const responses = {
           "hello": "Hello! How can I assist you today?",
-          "help": "I can help with:\n- Answer questions\n- Read Azure DevOps tickets (just share a ticket URL or ID)\n- Provide conversation summaries (use @summary)",
+          "help": "I can help with:\n- Read Azure DevOps tickets (just share a ticket URL or ID)\n- Post comments on Azure Tickets \n- Perform QnA on Tickets \n- Provide conversation summaries (use @summary)",
           "what can you do?": "I can provide information, read Azure DevOps tickets, and summarize conversations. Just ask!"
         };
 
@@ -130,6 +190,19 @@ class TeamsBot extends TeamsActivityHandler {
       return null;
     } catch (error) {
       console.error('Error extracting work item ID:', error);
+      return null;
+    }
+  }
+
+  extractWorkItemIdFromContext(ticketContext) {
+    try {
+      const idMatch = ticketContext.match(/\*\*ID\*\*: (\d+)/);
+      if (idMatch && idMatch[1]) {
+        return idMatch[1];
+      }
+      return null;
+    } catch (error) {
+      console.error('Error extracting work item ID from context:', error);
       return null;
     }
   }
@@ -194,6 +267,47 @@ class TeamsBot extends TeamsActivityHandler {
     } catch (error) {
       console.error("Error fetching work item history:", error);
       return [];
+    }
+  }
+
+  async addCommentToWorkItem(workItemId, commentText) {
+    try {
+      const baseUrl = "https://dev.azure.com/ShorthillsPM";
+      const apiUrl = `${baseUrl}/_apis/wit/workitems/${workItemId}?api-version=6.0`;
+      
+      console.log(`Adding comment to work item #${workItemId}`);
+      
+      const authToken = Buffer.from(`:${this.personalAccessToken}`).toString('base64');
+      const authHeader = {
+        'Authorization': `Basic ${authToken}`,
+        'Content-Type': 'application/json-patch+json'
+      };
+      
+      const payload = [
+        {
+          "op": "add",
+          "path": "/fields/System.History",
+          "value": commentText
+        }
+      ];
+      
+      const response = await axios.patch(apiUrl, payload, { 
+        headers: authHeader
+      });
+      
+      console.log(`Comment response status: ${response.status}`);
+      
+      return response.data;
+    } catch (error) {
+      console.error("Error adding comment to work item:", error);
+      
+      if (error.response) {
+        throw new Error(`Failed to add comment (${error.response.status}): ${error.response.data?.message || 'Unknown error'}`);
+      } else if (error.request) {
+        throw new Error("Network error: No response received from Azure DevOps API.");
+      } else {
+        throw new Error(`Error: ${error.message}`);
+      }
     }
   }
 
@@ -282,8 +396,7 @@ class TeamsBot extends TeamsActivityHandler {
         hasDiscussion = true;
         discussionEntries.forEach(entry => {
           if (entry.fields['System.History']) {
-            const commentDate = new Date(entry.revisedDate).toLocaleString();
-            formattedInfo += `\n📝 **${entry.revisedBy?.displayName || 'Unknown'}** (${commentDate}):\n`;
+            formattedInfo += `\n📝 **${entry.revisedBy?.displayName || 'Unknown'}**:\n`;
             formattedInfo += `${this.stripHtml(entry.fields['System.History'].newValue)}\n`;
           }
         });
