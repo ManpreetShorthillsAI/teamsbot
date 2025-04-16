@@ -97,7 +97,7 @@ class TeamsBot extends TeamsActivityHandler {
         const summary = await this.generateSummary(this.chatHistories[conversationId]);
         logBotResponse(summary);
         await context.sendActivity(summary);
-      } else if (txt.includes("@activeticketsummary")) {
+      } else if (txt.includes("@ticketsummary")) {
         try {
           // Fetch the board summary
           const workItems = await this.getSummaryFromBoardOriginal();
@@ -125,6 +125,7 @@ class TeamsBot extends TeamsActivityHandler {
           logBotResponse(combinedSummary);
           await context.sendActivity(combinedSummary);
 
+          await context.sendActivity("Board and sprint summaries have been stored in the LLM context.");
         } catch (error) {
           console.error("Error processing @activeticketsummary command:", error);
           await context.sendActivity("Failed to process the @activeticketsummary command.");
@@ -700,6 +701,7 @@ class TeamsBot extends TeamsActivityHandler {
       const assignedTo = wi.fields['System.AssignedTo']?.displayName || "Unassigned";
       const title = wi.fields['System.Title'] || "Untitled";
       const state = wi.fields['System.State'] || "Unknown";
+      const ticketNumber = wi.id;
 
       if (!sprintSummary[sprint]) {
         sprintSummary[sprint] = {};
@@ -713,7 +715,7 @@ class TeamsBot extends TeamsActivityHandler {
         sprintSummary[sprint][assignedTo][state] = [];
       }
 
-      sprintSummary[sprint][assignedTo][state].push(title);
+      sprintSummary[sprint][assignedTo][state].push(`${ticketNumber}: ${title}`);
     }
 
     let summary = `📊 **Sprint Summary**\n\n`;
