@@ -59,7 +59,7 @@ class TeamsBot extends TeamsActivityHandler {
       }
       else if (originalText.startsWith("@comment")) {
         const commentText = originalText.substring("@comment".length).trim();
-        
+
         if (!this.ticketContext[conversationId]) {
           await context.sendActivity(MessageFactory.text(
             "Please share a ticket first before adding a comment."
@@ -68,12 +68,12 @@ class TeamsBot extends TeamsActivityHandler {
           try {
             const workItemId = this.extractWorkItemIdFromContext(this.ticketContext[conversationId]);
             console.log("Extracted work item ID from context:", workItemId);
-            
-            
+
+
             if (workItemId) {
               await this.addCommentToWorkItem(workItemId, commentText);
               console.log("Comment added successfully to work item:", workItemId);
-              
+
               await context.sendActivity(MessageFactory.text(
                 `✅ Comment added to work item #${workItemId} successfully!`
               ));
@@ -89,43 +89,49 @@ class TeamsBot extends TeamsActivityHandler {
           }
         }
       }
-      else if (originalText.startsWith("@comment")) {
-        const commentText = originalText.substring("@comment".length).trim();
-        
-        if (!this.ticketContext[conversationId]) {
-          await context.sendActivity(MessageFactory.text(
-            "Please share a ticket first before adding a comment."
-          ));
-        } else {
-          try {
-            const workItemId = this.extractWorkItemIdFromContext(this.ticketContext[conversationId]);
-            
-            if (workItemId) {
-              await this.addCommentToWorkItem(workItemId, commentText);
-              await context.sendActivity(MessageFactory.text(
-                `✅ Comment added to work item #${workItemId} successfully!`
-              ));
-            } else {
-              await context.sendActivity(MessageFactory.text(
-                "Could not determine which ticket to comment on. Please share the ticket again."
-              ));
-            }
-          } catch (error) {
-            await context.sendActivity(MessageFactory.text(
-              `Error adding comment: ${error.message}`
-            ));
-          }
-        }
-      }      
-      // Check if user requests summary
+      else if (txt === "check llm context") {
+        const response = this.checkLLMContext();
+        await context.sendActivity(response);
+      }
       else if (txt.includes("@summary")) {
         const summary = await this.generateSummary(this.chatHistories[conversationId]);
         logBotResponse(summary);
         await context.sendActivity(summary);
+      } else if (txt.includes("@activeticketsummary")) {
+        try {
+          // Fetch the board summary
+          const workItems = await this.getSummaryFromBoardOriginal();
+          console.log("Work Items Retrieved:", workItems); // Debugging log
+
+          if (!workItems || workItems.length === 0) {
+            throw new Error("No work items found.");
+          }
+
+          const boardSummary = this.generateOverallTicketSummary(workItems);
+
+          const sprintSummary = this.generateSprintSummary(workItems);
+
+          const combinedSummary = `${boardSummary}\n\n${sprintSummary}`;
+
+          this.llmContext = `
+            You are an assistant with access to the following board and sprint summaries:
+      
+            ${combinedSummary}
+      
+            Use this data to answer questions about the tickets.
+          `;
+          console.log("LLM Context Set:", this.llmContext);
+
+          logBotResponse(combinedSummary);
+          await context.sendActivity(combinedSummary);
+
+        } catch (error) {
+          console.error("Error processing @activeticketsummary command:", error);
+          await context.sendActivity("Failed to process the @activeticketsummary command.");
+        }
       }
-      else if (txt.endsWith("?") && this.ticketContext[conversationId]) {
-        const answer = await this.answerQuestionAboutTicket(originalText, this.ticketContext[conversationId]);
-        logBotResponse(answer);
+      else if (txt.endsWith("?")) {
+        const answer = await this.queryLLM(originalText);
         await context.sendActivity(answer);
       }
 
@@ -274,15 +280,15 @@ class TeamsBot extends TeamsActivityHandler {
     try {
       const baseUrl = "https://dev.azure.com/ShorthillsPM";
       const apiUrl = `${baseUrl}/_apis/wit/workitems/${workItemId}?api-version=6.0`;
-      
+
       console.log(`Adding comment to work item #${workItemId}`);
-      
+
       const authToken = Buffer.from(`:${this.personalAccessToken}`).toString('base64');
       const authHeader = {
         'Authorization': `Basic ${authToken}`,
         'Content-Type': 'application/json-patch+json'
       };
-      
+
       const payload = [
         {
           "op": "add",
@@ -290,17 +296,17 @@ class TeamsBot extends TeamsActivityHandler {
           "value": commentText
         }
       ];
-      
-      const response = await axios.patch(apiUrl, payload, { 
+
+      const response = await axios.patch(apiUrl, payload, {
         headers: authHeader
       });
-      
+
       console.log(`Comment response status: ${response.status}`);
-      
+
       return response.data;
     } catch (error) {
       console.error("Error adding comment to work item:", error);
-      
+
       if (error.response) {
         throw new Error(`Failed to add comment (${error.response.status}): ${error.response.data?.message || 'Unknown error'}`);
       } else if (error.request) {
@@ -448,11 +454,11 @@ class TeamsBot extends TeamsActivityHandler {
     const prompt = `
         You are a professional summarizer. Provide a concise, clear, and objective summary
         of the following conversation and messages from today:
-
+ 
         \`\`\`
         ${messagesText}
         \`\`\`
-
+ 
         Key requirements for the summary:
         1. Capture the main topics and key points discussed
         2. Identify any important decisions or action items
@@ -485,16 +491,45 @@ class TeamsBot extends TeamsActivityHandler {
       return "Error generating summary.";
     }
   }
+  async queryLLM(question) {
+    const prompt = `
+      ${this.llmContext}
+  
+      Question: ${question}
+      Answer:
+    `;
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+    const requestBody = {
+      contents: [{ parts: [{ text: prompt }] }]
+    };
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody)
+      });
+
+      const data = await response.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "Sorry, I couldn't find an answer.";
+    } catch (error) {
+      console.error("Error querying LLM:", error);
+      return "Error querying the LLM.";
+    }
+  }
   async answerQuestionAboutTicket(question, ticketContent) {
     const prompt = `
   You are an assistant helping users understand Azure DevOps tickets. Based on the following work item data:
-
-  """ 
+ 
+  """
   ${ticketContent}
   """
-
+ 
   Answer the following question clearly and accurately:
-
+ 
   Q: ${question}
   A: `;
 
@@ -520,6 +555,184 @@ class TeamsBot extends TeamsActivityHandler {
     }
   }
 
+  checkLLMContext() {
+    if (this.llmContext) {
+      console.log("LLM Context is set:", this.llmContext);
+      return this.llmContext;
+    } else {
+      console.log("LLM Context is not set.");
+      return "LLM Context is not set.";
+    }
+  }
+  async storeBoardSummaryInLLMContext() {
+    try {
+      const boardSummary = await this.getSummaryFromBoardoriginal();
+      console.log("Board Summary Retrieved:", boardSummary);
+
+      if (!boardSummary || boardSummary === "Unable to fetch ticket summary from the board.") {
+        throw new Error("Board summary is empty or could not be fetched.");
+      }
+
+      this.llmContext = `
+        You are an assistant with access to the following board summary:
+  
+        ${boardSummary}
+  
+        Use this data to answer questions about the tickets.
+      `; e
+
+      console.log("LLM Context Set:", this.llmContext);
+      return "Board summary has been stored in the LLM context.";
+    } catch (error) {
+      console.error("Error storing board summary in LLM context:", error);
+      return "Failed to store board summary in the LLM context.";
+    }
+  }
+  async getSummaryFromBoardOriginal() {
+    try {
+      const baseUrl = "https://dev.azure.com/ShorthillsPM";
+      const project = process.env.AZURE_PROJECT;
+      const wiqlUrl = `${baseUrl}/${project}/_apis/wit/wiql?api-version=6.0`;
+
+      const wiqlQuery = {
+        query: `
+          SELECT [System.Id], [System.State], [System.AssignedTo], [System.Title], [System.IterationPath]
+          FROM WorkItems
+          WHERE [System.TeamProject] = @project
+          ORDER BY [System.ChangedDate] DESC
+        `
+      };
+
+      const response = await axios.post(wiqlUrl, wiqlQuery, {
+        headers: {
+          'Authorization': `Basic ${Buffer.from(`:${this.personalAccessToken}`).toString('base64')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const workItemRefs = response.data.workItems || [];
+      const workItemIds = workItemRefs.map(item => item.id);
+
+      if (workItemIds.length === 0) {
+        return "There are no tickets on the board.";
+      }
+
+      const chunkSize = 200;
+      const allWorkItems = [];
+
+      for (let i = 0; i < workItemIds.length; i += chunkSize) {
+        const chunk = workItemIds.slice(i, i + chunkSize).join(",");
+        const batchUrl = `${baseUrl}/_apis/wit/workitems?ids=${chunk}&fields=System.State,System.AssignedTo,System.Title,System.IterationPath&api-version=6.0`;
+
+        const batchResponse = await axios.get(batchUrl, {
+          headers: {
+            'Authorization': `Basic ${Buffer.from(`:${this.personalAccessToken}`).toString('base64')}`
+          }
+        });
+
+        allWorkItems.push(...batchResponse.data.value);
+      }
+
+      return allWorkItems;
+    } catch (error) {
+      console.error("Error fetching board summary:", error);
+      return "Unable to fetch ticket summary from the board.";
+    }
+  }
+
+
+  generateOverallTicketSummary(allWorkItems) {
+    const total = allWorkItems.length;
+    const stateCounts = {
+      Active: 0,
+      Closed: 0,
+      Removed: 0,
+      New: 0,
+      Other: 0
+    };
+
+    const userStats = {};
+
+    for (const wi of allWorkItems) {
+      const state = wi.fields['System.State'];
+      const assignedTo = wi.fields['System.AssignedTo']?.displayName || "Unassigned";
+
+      if (stateCounts[state] !== undefined) {
+        stateCounts[state]++;
+      } else {
+        stateCounts.Other++;
+      }
+
+      if (!userStats[assignedTo]) {
+        userStats[assignedTo] = {};
+      }
+      if (!userStats[assignedTo][state]) {
+        userStats[assignedTo][state] = 0;
+      }
+      userStats[assignedTo][state]++;
+    }
+
+    let summary = `📊 **Board Summary** - ${total} total tickets\n\n`;
+    summary += `- **Active**: ${stateCounts.Active}\n`;
+    summary += `- **Closed**: ${stateCounts.Closed}\n`;
+    summary += `- **Removed**: ${stateCounts.Removed || 0}\n`;
+    summary += `- **New**: ${stateCounts.New || 0}\n`;
+    if (stateCounts.Other > 0) {
+      summary += `- **Other States**: ${stateCounts.Other}\n`;
+    }
+
+    summary += `\n### Tickets per user:\n`;
+    for (const [user, states] of Object.entries(userStats)) {
+      const userTotal = Object.values(states).reduce((a, b) => a + b, 0);
+      summary += `- **${user}**: ${userTotal} tickets\n`;
+
+
+    }
+
+    return summary;
+  }
+
+  generateSprintSummary(workItems) {
+    const sprintSummary = {};
+
+    for (const wi of workItems) {
+      const sprint = wi.fields['System.IterationPath'] || "Unassigned Sprint";
+      const assignedTo = wi.fields['System.AssignedTo']?.displayName || "Unassigned";
+      const title = wi.fields['System.Title'] || "Untitled";
+      const state = wi.fields['System.State'] || "Unknown";
+
+      if (!sprintSummary[sprint]) {
+        sprintSummary[sprint] = {};
+      }
+
+      if (!sprintSummary[sprint][assignedTo]) {
+        sprintSummary[sprint][assignedTo] = {};
+      }
+
+      if (!sprintSummary[sprint][assignedTo][state]) {
+        sprintSummary[sprint][assignedTo][state] = [];
+      }
+
+      sprintSummary[sprint][assignedTo][state].push(title);
+    }
+
+    let summary = `📊 **Sprint Summary**\n\n`;
+    for (const [sprint, users] of Object.entries(sprintSummary)) {
+      summary += `### Sprint: ${sprint}\n`;
+      for (const [user, states] of Object.entries(users)) {
+        summary += `- **${user}**:\n`;
+        for (const [state, tickets] of Object.entries(states)) {
+          summary += `  - **${state}** (${tickets.length} tickets):\n`;
+          for (const ticket of tickets) {
+            summary += `    - ${ticket}\n`;
+          }
+        }
+      }
+      summary += `\n`;
+    }
+
+    return summary;
+  }
 }
 
 module.exports.TeamsBot = TeamsBot;

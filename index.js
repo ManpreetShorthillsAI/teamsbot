@@ -42,7 +42,7 @@ adapter.onTurnError = async (context, error) => {
 // Create the bot that will handle incoming messages.
 const bot = new TeamsBot(
   "https://dev.azure.com/ShorthillsPM",
-  "EkEOjRfhUf1ihAYbcf3KuoOxJFdFDAPpMKrVLQuwlZUTeWv3Omr2JQQJ99BDACAAAAANsX8OAAASAZDO3hBV"
+  process.env.AZURE_DEVOPS_PAT,
 );
 
 // Create express application.
