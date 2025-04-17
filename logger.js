@@ -25,9 +25,9 @@ function logMessage(sender, message) {
     });
 }
 
-function logBotResponse(message) {
+function logBotResponse(message, recipient) {
     const timestamp = new Date().toISOString();
-    const logLine = `[${timestamp}] 🤖 Bot: ${message}\n`;
+    const logLine = `[${timestamp}] 🤖 Bot to ${recipient}: ${message}\n`;
 
     fs.appendFile(logFile, logLine, (err) => {
         if (err) {

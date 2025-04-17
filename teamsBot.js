@@ -24,7 +24,7 @@ class TeamsBot extends TeamsActivityHandler {
         this.chatHistories[conversationId] = [];
       }
 
-      const sender = context.activity.from.name;
+      const sender = context.activity.from.name || "Unknown";
       const messageText = context.activity.text;
       logMessage(sender, messageText);
       // Capture message text correctly
@@ -49,21 +49,19 @@ class TeamsBot extends TeamsActivityHandler {
         try {
           const workItemDetails = await this.getWorkItemDetails(workItemId);
           this.ticketContext[conversationId] = workItemDetails;
-          logBotResponse(workItemDetails);
-          await context.sendActivity(MessageFactory.text(workItemDetails));
+          logBotResponse(workItemDetails, sender);
+          await context.sendActivity(`Hi ${sender}, here are the details:\n\n${workItemDetails}`);
         } catch (error) {
           const errorMessage = `Error processing work item: ${error.message}`;
-          logBotResponse(errorMessage);
-          await context.sendActivity(MessageFactory.text(errorMessage));
+          logBotResponse(errorMessage, sender);
+          await context.sendActivity(`Hi ${sender}, ${errorMessage}`);
         }
       }
       else if (originalText.startsWith("@comment")) {
         const commentText = originalText.substring("@comment".length).trim();
 
         if (!this.ticketContext[conversationId]) {
-          await context.sendActivity(MessageFactory.text(
-            "Please share a ticket first before adding a comment."
-          ));
+          await context.sendActivity(`Hi ${sender}, please share a ticket first before adding a comment.`);
         } else {
           try {
             const workItemId = this.extractWorkItemIdFromContext(this.ticketContext[conversationId]);
@@ -74,29 +72,24 @@ class TeamsBot extends TeamsActivityHandler {
               await this.addCommentToWorkItem(workItemId, commentText);
               console.log("Comment added successfully to work item:", workItemId);
 
-              await context.sendActivity(MessageFactory.text(
-                `✅ Comment added to work item #${workItemId} successfully!`
-              ));
+              await context.sendActivity(`✅ Hi ${sender}, comment added to work item #${workItemId} successfully!`);
             } else {
-              await context.sendActivity(MessageFactory.text(
-                "Could not determine which ticket to comment on. Please share the ticket again."
-              ));
+              await context.sendActivity(`Hi ${sender}, could not determine which ticket to comment on. Please share the ticket again.`);
             }
           } catch (error) {
-            await context.sendActivity(MessageFactory.text(
-              `Error adding comment: ${error.message}`
-            ));
+            await context.sendActivity(`Hi ${sender}, error adding comment: ${error.message}`);
           }
         }
       }
       else if (txt === "check llm context") {
         const response = this.checkLLMContext();
-        await context.sendActivity(response);
+        logBotResponse(response, sender);
+        await context.sendActivity(`Hi ${sender}, ${response}`);
       }
       else if (txt.includes("@summary")) {
         const summary = await this.generateSummary(this.chatHistories[conversationId]);
-        logBotResponse(summary);
-        await context.sendActivity(summary);
+        logBotResponse(summary, sender);
+        await context.sendActivity(`Hi ${sender}, here is the summary:\n\n${summary}`);
       } else if (txt.includes("@ticketsummary")) {
         try {
           // Fetch the board summary
@@ -115,25 +108,26 @@ class TeamsBot extends TeamsActivityHandler {
 
           this.llmContext = `
             You are an assistant with access to the following board and sprint summaries:
-      
+    
             ${combinedSummary}
-      
+    
             Use this data to answer questions about the tickets.
           `;
           console.log("LLM Context Set:", this.llmContext);
 
-          logBotResponse(combinedSummary);
-          await context.sendActivity(combinedSummary);
+          logBotResponse(combinedSummary, sender);
+          await context.sendActivity(`Hi ${sender}, here is the summary:\n\n${combinedSummary}`);
 
-          await context.sendActivity("Board and sprint summaries have been stored in the LLM context.");
+          await context.sendActivity(`Hi ${sender}, board and sprint summaries have been stored in the LLM context.`);
         } catch (error) {
-          console.error("Error processing @activeticketsummary command:", error);
-          await context.sendActivity("Failed to process the @activeticketsummary command.");
+          console.error("Error processing @ticketsummary command:", error);
+          await context.sendActivity(`Hi ${sender}, failed to process the @ticketsummary command.`);
         }
       }
       else if (txt.endsWith("?")) {
         const answer = await this.queryLLM(originalText);
-        await context.sendActivity(answer);
+        logBotResponse(answer, sender);
+        await context.sendActivity(`Hi ${sender}, ${answer}`);
       }
 
       // Regular bot responses
@@ -145,8 +139,8 @@ class TeamsBot extends TeamsActivityHandler {
         };
 
         const reply = responses[txt] || "I'm not sure how to respond to that. Try asking 'help' to see what I can do!";
-        logBotResponse(reply);
-        await context.sendActivity(reply);
+        logBotResponse(reply, sender);
+        await context.sendActivity(`Hi ${sender}, ${reply}`);
       }
 
       await next();
